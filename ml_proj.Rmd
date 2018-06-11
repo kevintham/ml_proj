@@ -1,0 +1,145 @@
+---
+title: "Prediction of Human Physical Activity Execution Quality"
+author: "Kevin Tham"
+date: "June 11, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The aim is to create a machine learning model to predict the quality of exercise based on acelerometer measurements in the dataset. 
+
+
+## Preliminary Data Exploration and Cleaning
+
+To begin with we load relevant libraries in R:
+
+```{r, message=FALSE}
+if (!require("pacman"))
+  install.packages("pacman", repos = "http://cran.us.r-project.org")
+pacman::p_load(knitr, dplyr, ggplot2, tidyr, car,
+               tibble, caret, data.table, xgboost)
+```
+
+Next the data is downloaded into the working directory.
+
+```{r}
+url1 <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+url2 <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+destfile1 <- 'pml-training.csv'
+destfile2 <- 'pml-testing.csv'
+
+
+# Set the following to the appropriate working directory
+setwd('/home/kevintham/work/datasciencecoursera/ml_proj/')
+
+if (!file.exists(destfile1))
+  download.file(url1, destfile1, method = "auto")
+if (!file.exists(destfile2))
+  download.file(url2, destfile2, method = "auto")
+```
+
+After preliminary investigation of the dataset, it is discovered that there are many missing values in the data. In fact, entire variables have large number of missing values while the other variables are effectively complete. Therefore we will remove variables with a number of missing values greater than 100. We will also remove the first 7 variables as they not only do not give relevant information for prediction, but some of the variables (eg. time when data was recorded) contain information that is related to the target variable (data leakage). The remaning variables are solely instrument measurements recording the test subjects' movements.
+
+
+```{r, cache=TRUE}
+train <- fread(destfile1, na.strings = c("NA", "", "#DIV/0!"))
+test <- fread(destfile2, na.strings = c("NA", "", "#DIV/0!"))
+```
+
+```{r}
+ytrain <- as.factor(train$classe)
+ytest <- as.factor(test$classe)
+
+train <- train[,-160]
+test <- test[,-160]
+
+na_count <- sapply(train, function(y) sum(is.na(y)))
+
+nacols <- which(na_count>100)
+train <- select(train, -nacols)
+test <- select(test, -nacols)
+
+#ggplot(train, aes(x=cvtd_timestamp,y=classe)) + geom_boxplot()
+#ggplot(train, aes(x=classe,y=user_name)) + geom_boxplot()
+
+train <- select(train, -c(1:7))
+test <- select(test, -c(1:7))
+
+str(train)
+```
+
+
+
+## Hyperparameter Tuning and Model Validation
+
+We will select the XGBoost model as our machine learning model for prediction. The XGBoost model has many hyperparameters to be tuned. In order to have a validation estimate for the final model, we split the training set further to obtain a validation set. The remaining data is used for hyperparameter tuning.
+
+Hyperparameter tuning is conducted through a grid search. 5-fold cross validation is conducted on the remaining data for every model trained with different hyperparameter combinations through the grid search to determine the best set of hyperparameters. The best set of hyperparameters is selected from the cross validation results, and a new model with the winning set of hyperparameters is then training over the 5 folds.
+
+This model is then validated by checking its prediction on the validation set, to obtain an idea of the accuracy of the final model.
+
+
+```{r, cache=TRUE}
+set.seed(1)
+
+index <- createDataPartition(ytrain, p=0.8)$Resample1
+
+trainmat <- model.matrix(~.-1,train)
+
+X <- trainmat[index,]
+Xval <- trainmat[-index,]
+y <- ytrain[index]
+yval <- ytrain[-index]
+```
+
+```{r, cache=TRUE}
+seeds <- vector(mode='list', length=6)
+for(i in 1:5) seeds[[i]] <- sample.int(n=1000,36)
+seeds[[6]] <- sample.int(n=1000,1)
+ctrl <- trainControl(method='cv',number=5, classProbs=TRUE, seeds=seeds)
+
+valmodel <- train(X, y, method='xgbTree', trControl=ctrl)
+```
+
+```{r}
+valmodel$bestTune
+valmodel$results %>% filter(Accuracy==max(Accuracy))
+```
+
+We can examine the cross validation results within the hyperparameter tuning process. The winning model had an accuracy of 0.994, with a standard deviation of 0.001. This indicates that the accuracy is fairly stable.
+
+```{r}
+valres <- predict(valmodel, newdata=Xval)
+confusionMatrix(valres, yval)
+```
+
+The validation result gives ann accuracy of 0.995, which is adequate for our purposes. Also, since this accuracy is very close to the cross validation result, we can conclude that our model is not overfitting to the training (remaining) data.
+
+## Model Training
+
+Now that we have an idea of the model process performance, we proceed to training of the final model. This is done by hyperparameter tuning over the entire training set (validation + remaining data), which is once again conducted by grid search and 5-fold cross validation. Once again the best set of hyperparameters is selected and the final model is trained over the entire training set with these hyperparameters.
+
+
+```{r, cache=TRUE}
+finalmod <- train(trainmat, ytrain, method='xgbTree', trControl=ctrl)
+```
+
+We can obtain the winning set of hyperparameters here:
+
+```{r}
+finalmod$bestTune
+```
+
+
+
+```{r}
+testmat <- model.matrix(~.-1,test)
+testres <- predict(finalmod, newdata=testmat)
+testres

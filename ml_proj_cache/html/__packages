@@ -1,0 +1,17 @@
+base
+pacman
+knitr
+dplyr
+ggplot2
+GGally
+tidyr
+carData
+car
+broom
+tibble
+lattice
+caret
+data.table
+xgboost
+class
+bindrcpp
