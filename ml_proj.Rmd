@@ -45,7 +45,7 @@ if (!file.exists(destfile2))
   download.file(url2, destfile2, method = "auto")
 ```
 
-After preliminary investigation of the dataset, it is discovered that there are many missing values in the data. In fact, entire variables have large number of missing values while the other variables are effectively complete. Therefore we will remove variables with a number of missing values greater than 100. We will also remove the first 7 variables as they not only do not give relevant information for prediction, but some of the variables (eg. time when data was recorded) contain information that is related to the target variable (data leakage). The remaning variables are solely instrument measurements recording the test subjects' movements.
+After preliminary investigation of the dataset, it is discovered that there are many missing values in the data. In fact, entire variables have large number of missing values while the other variables are effectively complete. Therefore we will remove variables with a number of missing values greater than 100. We will also remove the first 7 variables as they not only do not give relevant information for prediction, but some of the variables (eg. time when data was recorded) contain information that is related to the target variable (data leakage). The remaining variables are solely instrument measurements recording the test subjects' movements.
 
 
 ```{r, cache=TRUE}
@@ -137,9 +137,8 @@ We can obtain the winning set of hyperparameters here:
 finalmod$bestTune
 ```
 
-
-
 ```{r}
 testmat <- model.matrix(~.-1,test)
 testres <- predict(finalmod, newdata=testmat)
 testres
+```

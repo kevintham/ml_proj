@@ -316,8 +316,8 @@ $(document).ready(function () {
 <p>Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <a href="http://groupware.les.inf.puc-rio.br/har" class="uri">http://groupware.les.inf.puc-rio.br/har</a> (see the section on the Weight Lifting Exercise Dataset).</p>
 <p>The aim is to create a machine learning model to predict the quality of exercise based on acelerometer measurements in the dataset.</p>
 </div>
-<div id="preliminary-data-exploration" class="section level2">
-<h2>Preliminary Data Exploration</h2>
+<div id="preliminary-data-exploration-and-cleaning" class="section level2">
+<h2>Preliminary Data Exploration and Cleaning</h2>
 <p>To begin with we load relevant libraries in R:</p>
 <pre class="r"><code>if (!require(&quot;pacman&quot;))
   install.packages(&quot;pacman&quot;, repos = &quot;http://cran.us.r-project.org&quot;)
@@ -337,7 +337,7 @@ if (!file.exists(destfile1))
   download.file(url1, destfile1, method = &quot;auto&quot;)
 if (!file.exists(destfile2))
   download.file(url2, destfile2, method = &quot;auto&quot;)</code></pre>
-<p>After preliminary investigation of the dataset, it is discovered that there are many missing values in the data. In fact, entire variables have large number of missing values while the other variables are effectively complete. Therefore we will remove variables with a number of missing values greater than 100. We will also remove the first 7 variables as they not only do not give relevant information for prediction, but some of the variables (eg. time when data was recorded) contain information that is related to the target variable (data leakage). The remaning variables are solely instrument measurements recording the test subjects’ movements.</p>
+<p>After preliminary investigation of the dataset, it is discovered that there are many missing values in the data. In fact, entire variables have large number of missing values while the other variables are effectively complete. Therefore we will remove variables with a number of missing values greater than 100. We will also remove the first 7 variables as they not only do not give relevant information for prediction, but some of the variables (eg. time when data was recorded) contain information that is related to the target variable (data leakage). The remaining variables are solely instrument measurements recording the test subjects’ movements.</p>
 <pre class="r"><code>train &lt;- fread(destfile1, na.strings = c(&quot;NA&quot;, &quot;&quot;, &quot;#DIV/0!&quot;))
 test &lt;- fread(destfile2, na.strings = c(&quot;NA&quot;, &quot;&quot;, &quot;#DIV/0!&quot;))</code></pre>
 <pre class="r"><code>ytrain &lt;- as.factor(train$classe)
@@ -413,6 +413,12 @@ str(train)</code></pre>
 ##  $ magnet_forearm_y    : num  654 661 658 658 655 660 659 660 653 656 ...
 ##  $ magnet_forearm_z    : num  476 473 469 469 473 478 470 474 476 473 ...
 ##  - attr(*, &quot;.internal.selfref&quot;)=&lt;externalptr&gt;</code></pre>
+</div>
+<div id="hyperparameter-tuning-and-model-validation" class="section level2">
+<h2>Hyperparameter Tuning and Model Validation</h2>
+<p>We will select the XGBoost model as our machine learning model for prediction. The XGBoost model has many hyperparameters to be tuned. In order to have a validation estimate for the final model, we split the training set further to obtain a validation set. The remaining data is used for hyperparameter tuning.</p>
+<p>Hyperparameter tuning is conducted through a grid search. 5-fold cross validation is conducted on the remaining data for every model trained with different hyperparameter combinations through the grid search to determine the best set of hyperparameters. The best set of hyperparameters is selected from the cross validation results, and a new model with the winning set of hyperparameters is then training over the 5 folds.</p>
+<p>This model is then validated by checking its prediction on the validation set, to obtain an idea of the accuracy of the final model.</p>
 <pre class="r"><code>set.seed(1)
 
 index &lt;- createDataPartition(ytrain, p=0.8)$Resample1
@@ -439,6 +445,7 @@ valmodel &lt;- train(X, y, method='xgbTree', trControl=ctrl)</code></pre>
 ## 1 0.4         3     0              0.8                1       0.5     150
 ##    Accuracy     Kappa  AccuracySD     KappaSD
 ## 1 0.9943945 0.9929102 0.001070759 0.001354342</code></pre>
+<p>We can examine the cross validation results within the hyperparameter tuning process. The winning model had an accuracy of 0.994, with a standard deviation of 0.001. This indicates that the accuracy is fairly stable.</p>
 <pre class="r"><code>valres &lt;- predict(valmodel, newdata=Xval)
 confusionMatrix(valres, yval)</code></pre>
 <pre><code>## Confusion Matrix and Statistics
@@ -472,7 +479,13 @@ confusionMatrix(valres, yval)</code></pre>
 ## Detection Rate         0.2845   0.1932   0.1726   0.1616   0.1830
 ## Detection Prevalence   0.2845   0.1942   0.1746   0.1631   0.1835
 ## Balanced Accuracy      1.0000   0.9987   0.9936   0.9921   0.9976</code></pre>
+<p>The validation result gives ann accuracy of 0.995, which is adequate for our purposes. Also, since this accuracy is very close to the cross validation result, we can conclude that our model is not overfitting to the training (remaining) data.</p>
+</div>
+<div id="model-training" class="section level2">
+<h2>Model Training</h2>
+<p>Now that we have an idea of the model process performance, we proceed to training of the final model. This is done by hyperparameter tuning over the entire training set (validation + remaining data), which is once again conducted by grid search and 5-fold cross validation. Once again the best set of hyperparameters is selected and the final model is trained over the entire training set with these hyperparameters.</p>
 <pre class="r"><code>finalmod &lt;- train(trainmat, ytrain, method='xgbTree', trControl=ctrl)</code></pre>
+<p>We can obtain the winning set of hyperparameters here:</p>
 <pre class="r"><code>finalmod$bestTune</code></pre>
 <pre><code>##    nrounds max_depth eta gamma colsample_bytree min_child_weight subsample
 ## 96     150         3 0.4     0              0.6                1      0.75</code></pre>
